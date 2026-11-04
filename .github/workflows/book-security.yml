@@ -1,0 +1,62 @@
+name: Book list security tests
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify JavaScript syntax and safe rendering
+        run: |
+          node --check main.js
+          node <<'JS'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs');
+          const js=fs.readFileSync('main.js','utf8');
+          const html=fs.readFileSync('index.html','utf8');
+          assert.ok(!/document\.write\s*\(/.test(js),'document.write should not be used');
+          assert.ok(js.includes('item.textContent ='),'Book titles must be text');
+          assert.ok(html.includes('id="lista-libros"'),'Missing list container');
+          console.log('Static security checks passed');
+          JS
+      - name: Install Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Verify books render safely in Chromium
+        run: |
+          node <<'JS'
+          const {chromium}=require('playwright');
+          const assert=require('node:assert/strict');
+          const path=require('node:path');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            try{
+              const page=await browser.newPage();
+              const errors=[];
+              page.on('pageerror',e=>errors.push(e.message));
+              await page.goto('file://'+path.resolve('index.html'),{waitUntil:'domcontentloaded'});
+              const list=page.locator('#lista-libros li');
+              assert.ok(await list.count()>0,'No books rendered');
+              assert.ok((await page.locator('#lista-libros').innerText()).includes('Leído'),'Missing read status');
+              assert.ok((await page.locator('#lista-libros').innerText()).includes('No leído'),'Missing unread status');
+              assert.deepEqual(errors,[],'Browser JavaScript errors');
+              await page.evaluate(()=>{
+                libreria.addLibro('<img src=x onerror=alert(1)>');
+                libreria.mostrarLibros();
+              });
+              const last=page.locator('#lista-libros li').last();
+              assert.equal(await last.textContent(),'<img src=x onerror=alert(1)> - No leído');
+              assert.equal(await last.locator('img').count(),0,'HTML injection');
+              console.log('Book rendering and XSS regression passed');
+            } finally {await browser.close();}
+          })().catch(e=>{console.error(e);process.exit(1)});
+          JS
