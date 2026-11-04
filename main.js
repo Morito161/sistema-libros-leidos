@@ -32,7 +32,9 @@ const libreria = {
 
     mostrarLibros: function(){
     this.librosLeidos.forEach(libro => {
-        document.write(`${libro.titulo} - ${libro.leido ? "Leído" : "No leído"}<br>`)
+        const item = document.createElement("li");
+        item.textContent = `${libro.titulo} - ${libro.leido ? "Leído" : "No leído"}`;
+        document.getElementById("lista-libros").appendChild(item);
     })
     },
 
@@ -79,5 +81,5 @@ libreria.marcarLeido("HTML, CSS & JavaScript All-in-One For Dummies")
 
 
 console.log(libreria)
-document.write(libreria.mostrarLibros())
+libreria.mostrarLibros()
 console.log(libreria.librosLeidos)
